@@ -840,6 +840,53 @@ func TestResponseExtension(t *testing.T) {
 	require.Equal(t, raw.Extensions["example"], "value")
 }
 
+func TestUnionFragments(t *testing.T) {
+	srv := httptest.NewServer(handler.GraphQL(
+		NewExecutableSchema(Config{
+			Resolvers: &testResolver{},
+		}),
+	))
+	c := client.New(srv.URL)
+
+	t.Run("inline fragment on union", func(t *testing.T) {
+		var resp struct {
+			ShapeUnion struct {
+				Radius float64
+			}
+		}
+		c.MustPost(`query {
+			shapeUnion {
+				... on Circle {
+					radius
+				}
+			}
+		}
+		`, &resp)
+		require.NotEmpty(t, resp.ShapeUnion.Radius)
+	})
+
+	t.Run("named fragment", func(t *testing.T) {
+		var resp struct {
+			ShapeUnion struct {
+				Radius float64
+			}
+		}
+		c.MustPost(`query {
+			shapeUnion {
+				...C
+			}
+		}
+
+		fragment C on ShapeUnion {
+			... on Circle {
+				radius
+			}
+		}
+		`, &resp)
+		require.NotEmpty(t, resp.ShapeUnion.Radius)
+	})
+}
+
 type testResolver struct {
 	tick        chan string
 	userFriends func(ctx context.Context, obj *User) ([]User, error)
@@ -907,6 +954,10 @@ func (r *testQueryResolver) DirectiveInput(ctx context.Context, arg InputDirecti
 
 func (r *testQueryResolver) ModelMethods(ctx context.Context) (*ModelMethods, error) {
 	return &ModelMethods{}, nil
+}
+
+func (r *testQueryResolver) ShapeUnion(ctx context.Context) (ShapeUnion, error) {
+	return &Circle{Radius: 32}, nil
 }
 
 func (r *testResolver) Subscription() SubscriptionResolver {
